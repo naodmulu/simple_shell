@@ -1,6 +1,5 @@
 
 This is a simple shell in C language which is done by two coders 
-
 It can be a command-line interface –the one we will build- or graphical user interface, like regular software such as Windows Office.
 
 Compilation This simple shell is compiled with:
