@@ -1,180 +1,130 @@
-#include "shell.h"
+#include "main.h"
 
+#define SETOWD(V) (V = _strdup(_getenv("OLDPWD")))
 /**
- * env - Prints the environment variables to stdout
-*/
-void env(void)
-{
-	int i;
-	char **env = __environ;
-
-	for (i = 0; env[i]; i++)
-	{
-		write(STDOUT_FILENO, env[i], _strlen(env[i]));
-		write(STDOUT_FILENO, "\n", 1);
-	}
-
-	set_process_exit_code(0);
-}
-
-/**
- * _setenv - Sets or adds an environment variable
- * @name: Name for the new env variable
- * @value: Value for the new env variable
+ * change_dir - changes directory
+ * @data: a pointer to the data structure
  *
- * Return: 1 on success, -1 on error
+ * Return: (Success) 0 is returned
+ * ------- (Fail) negative number will returned
  */
-int _setenv(char *name, char *value)
+int change_dir(sh_t *data)
 {
-	int env_index, new_var_len;
+	char *home;
 
-	if (validate_env_name(name) == -1)
-		return (-1);
-
-	env_index = get_env_index(name);
-	if (env_index == -1)
-	{/* var doen't exist, SO CREATE IT */
-		int env_count = 0;
-		int old_size, new_size;
-
-		while (__environ[env_count] != NULL)
-			env_count++;
-
-		old_size = sizeof(char *) * (env_count);
-		new_size = sizeof(char *) * (env_count + 2);
-		__environ = _realloc(__environ, old_size, new_size);
-		if (__environ == NULL)
-			dispatch_error("Error while _reallocating memory for new env var");
-
-		/* The new value will be stored at index env_count */
-		env_index = env_count;
-		/* last value For the new env var needs to be NULL */
-		__environ[env_count + 1] = NULL;
+	home = _getenv("HOME");
+	if (data->args[1] == NULL)
+	{
+		SETOWD(data->oldpwd);
+		if (chdir(home) < 0)
+			return (FAIL);
+		return (SUCCESS);
+	}
+	if (_strcmp(data->args[1], "-") == 0)
+	{
+		if (data->oldpwd == 0)
+		{
+			SETOWD(data->oldpwd);
+			if (chdir(home) < 0)
+				return (FAIL);
+		}
+		else
+		{
+			SETOWD(data->oldpwd);
+			if (chdir(data->oldpwd) < 0)
+				return (FAIL);
+		}
 	}
 	else
 	{
-		/* var exists, so overwrite it's value */
-		free(__environ[env_index]);
+		SETOWD(data->oldpwd);
+		if (chdir(data->args[1]) < 0)
+			return (FAIL);
 	}
-
-	new_var_len = _strlen(name) + _strlen(value) + 2;
-	/* store the env var either if it exists or it needs to be overwritten */
-	__environ[env_index] = allocate_memory(sizeof(char) * new_var_len);
-	_strcpy(__environ[env_index], name);
-	_strcat(__environ[env_index], "=");
-	_strcat(__environ[env_index], value);
-
-	set_process_exit_code(0);
-	return (1);
+	return (SUCCESS);
 }
-
+#undef GETCWD
 /**
- * _unsetenv - Removes an evironment variable
- * @name: Name for the new env variable
+ * abort_prg - exit the program
+ * @data: a pointer to the data structure
  *
- * Return: 1 on success, -1 on error
+ * Return: (Success) 0 is returned
+ * ------- (Fail) negative number will returned
  */
-int _unsetenv(char *name)
+int abort_prg(sh_t *data __attribute__((unused)))
 {
-	int env_index, i;
+	int code, i = 0;
 
-	env_index = get_env_index(name);
-	if (env_index >= 0)
-	{/* var exists, We can unset it */
-		free(__environ[env_index]);
-
-		for (i = env_index; __environ[i] != NULL; i++)
-			__environ[i] = __environ[i + 1];
-
-		set_process_exit_code(0);
-		return (1);
-	}
-
-	/* Var doesn't exist, we can print error or do nothing */
-	set_process_exit_code(0); /* Indicates that no error ocurred */
-
-	return (1);
-}
-
-/**
- * _cd - Changes the current directory of the process
- * @path: Path to wich change the working directory
- *
- * Return: 1 on success, -1 on error
-*/
-int _cd(char *path)
-{
-	char buff[1024];
-	char *oldpwd;
-	char *_path = path;
-
-	if (_strcmp(path, "-") == 0)
-		path = _getenv("OLDPWD");
-
-	if (path == NULL)
+	if (data->args[1] == NULL)
 	{
-		print_builtin_error("cd: OLDPWD not set", "");
-		return (-1);
+		free_data(data);
+		exit(errno);
 	}
-	/* Needed to avoid reading on freed memory */
-	path = duplicate_string(path);
-	/* store this dir in case of update */
-	oldpwd = getcwd(buff, 1024);
-	if (oldpwd == NULL)
+	while (data->args[1][i])
 	{
-		free(path);
-		print_builtin_error("cd: couldn't get current dir", "");
-		return (-1);
-	}
-	/* Try to change the current dir */
-	if (chdir(path) == -1)
-	{
-		free(path);
-		print_builtin_error("cd: can't change cd to ", _path);
-		set_process_exit_code(1);
-		return (-1);
-	}
-	/* Update env variables */
-	_setenv("OLDPWD", oldpwd);
-	_setenv("PWD", path);
-	free(path);
-	set_process_exit_code(0);
-	return (1);
-}
-
-/**
- * _alias - Sets an alias command
- * @commands: List of commands
- *
- * Return: -1 on error, 0 otherwise
-*/
-int _alias(char **commands)
-{
-	int status = 0;
-	list_t *curr;
-	list_t *out_head = NULL;
-	list_t **alias_addrs = get_alias_head();
-
-	/* the alias args starts from position 1 */
-	if (commands[1] == NULL)
-	{ /* This means to list all the aliases */
-		for (curr = *alias_addrs; curr != NULL; curr = curr->next)
+		if (_isalpha(data->args[1][i++]) < 0)
 		{
-			_puts(curr->str);
-			_puts("\n");
+			data->error_msg = _strdup("Illegal number\n");
+			return (FAIL);
 		}
-		set_process_exit_code(0);
-		return (1);
 	}
-	/* List aliases and sets the aliases that have the form name=value */
-	status = handle_alias_args(commands, &out_head);
-	/* print listed alias */
-	for (curr = out_head; curr != NULL; curr = curr->next)
+	code = _atoi(data->args[1]);
+	free_data(data);
+	exit(code);
+}
+/**
+ * display_help - display the help menu
+ * @data: a pointer to the data structure
+ *
+ * Return: (Success) 0 is returned
+ * ------- (Fail) negative number will returned
+ */
+int display_help(sh_t *data)
+{
+	int fd, fw, rd = 1;
+	char c;
+
+	fd = open(data->args[1], O_RDONLY);
+	if (fd < 0)
 	{
-		_puts(curr->str);
-		_puts("\n");
+		data->error_msg = _strdup("no help topics match\n");
+		return (FAIL);
 	}
-	/* free list */
-	free_list(out_head);
-	return (status);
+	while (rd > 0)
+	{
+		rd = read(fd, &c, 1);
+		fw = write(STDOUT_FILENO, &c, rd);
+		if (fw < 0)
+		{
+			data->error_msg = _strdup("cannot write: permission denied\n");
+			return (FAIL);
+		}
+	}
+	PRINT("\n");
+	return (SUCCESS);
+}
+/**
+ * handle_builtin - handle and manage the builtins cmd
+ * @data: a pointer to the data structure
+ *
+ * Return: (Success) 0 is returned
+ * ------- (Fail) negative number will returned
+ */
+int handle_builtin(sh_t *data)
+{
+	blt_t blt[] = {
+		{"exit", abort_prg},
+		{"cd", change_dir},
+		{"help", display_help},
+		{NULL, NULL}
+	};
+	int i = 0;
+
+	while ((blt + i)->cmd)
+	{
+		if (_strcmp(data->args[0], (blt + i)->cmd) == 0)
+			return ((blt + i)->f(data));
+		i++;
+	}
+	return (FAIL);
 }
